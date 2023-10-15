@@ -21,6 +21,7 @@ from urwid import (AttrMap,
                    emit_signal)
 
 from urllib.error import HTTPError
+from urwid.raw_display import Screen
 from urwid.signals import MetaSignals
 
 from tab_wrangler.browser import get_windows, close, save_and_close
@@ -52,7 +53,7 @@ class WindowListWalker(SimpleFocusListWalker):
 
     self.tab_list_walker = SimpleFocusListWalker(contents=[])
 
-    self.window_count  = Text(markup='')
+    self.window_count = Text(markup='')
     self.tab_count = Text(markup='')
 
     self.update_window_list()
@@ -64,9 +65,6 @@ class WindowListWalker(SimpleFocusListWalker):
     return [window.id for window in self]
 
   def update_window_list(self):
-
-    # with open("/tmp/debug", 'a') as debug:
-      # debug.write("update_window_list()\n")
 
     self.windows = get_windows()
 
@@ -118,9 +116,13 @@ class WindowListWalker(SimpleFocusListWalker):
 
       self.append(attribute_map)
 
+    tab_count = sum([len(window) for window in self.windows.values()])
+
     self.window_count.set_text(
-      markup = f" {len(self.windows)} windows,"
-               f" {sum([len(window) for window in self.windows])} tabs")
+      markup = (  f" {len(self.windows)} "
+                + "window" + ('s' if len(self.windows) > 1 else '') + ", "
+                + f"{tab_count} "
+                + "tab" + ('s' if tab_count > 1 else '')))
 
     # with open("/tmp/debug", 'a') as debug:
       # debug.write("\n")
@@ -226,7 +228,8 @@ class WindowListBox(ListBox):
 
     # with open("/tmp/debug", 'a') as debug:
       # debug.write("decrementing position...\n")
-      # debug.write(f"current focus: {self.body[self.focus_position].id} at index {self.focus_position}\n")
+      # debug.write(f"current focus: {self.body[self.focus_position].id} "
+                  # f"at index {self.focus_position}\n")
       # debug.write(f"ids preceding: {self._ids_preceding}\n")
       # debug.write(f"ids following: {self._ids_following}\n")
 
@@ -257,7 +260,8 @@ class WindowListBox(ListBox):
 
     # with open("/tmp/debug", 'a') as debug:
       # debug.write("incrementing position...\n")
-      # debug.write(f"current focus: {self.body[self.focus_position].id} at index {self.focus_position}\n")
+      # debug.write(f"current focus: {self.body[self.focus_position].id} "
+                  # f"at index {self.focus_position}\n")
       # debug.write(f"ids preceding: {self._ids_preceding}\n")
       # debug.write(f"ids following: {self._ids_following}\n")
 
@@ -297,50 +301,65 @@ class WindowListBox(ListBox):
     if key == 'q':
       raise ExitMainLoop()
 
-    self.main_loop.widget = self._split_footers # hide any recent status message
+    self.main_loop.widget = self._split_footers # hide any recent status
 
     self.body.update_window_list()
 
     if key == ' ':
       checkbox = self.body[self.focus_position].base_widget
       checkbox.state = not checkbox.state
+      return
 
     if key in ('k', 'up'):
       self._decrement_position()
+      return
 
-    if key in (' ', 'j', "down"): # TODO make ' ' continue in the last-used direction (up or down)
+    if key in (' ', 'j', "down"):
+      # TODO make ' ' continue in the last-used direction (up or down)
       self._increment_position()
+      return
 
     if key == 'g':
       self._set_position(0)
+      return
 
     if key == 'G':
       self._set_position(len(self.body) - 1)
+      return
 
     if key == 'd':
 
-      status = close(windows = self._selected_windows_with_tabs)
+      status = close(windows = self._selected_windows)
 
-      self._update_and_set_status(status=status)
+      self._set_status(status=status)
+
+      self.body.update_window_list()
+
+      self.focus_position = self.focus_position # trigger update tab list
+
+      return
 
     if key == 's':
 
-      status = save_and_close(windows = self._selected_windows_with_tabs)
+      status = save_and_close(windows = self._selected_windows)
 
       self._update_and_set_status(status=status)
 
+      return
+
     if key == 'w':
 
-      if len(self._selected_windows) == 1:
+      if len(self._selected_window_ids) == 1:
         # TODO check if the window has a title
           # if so, prompt for FOLDER name (rather than file name)
           # if not, prompt for filename
         self._save_prompt.set_caption("filename: ")
-      else: # len(self._selected_windows) > 1
+      else: # len(self._selected_window_ids) > 1
         self._save_prompt.set_caption("folder name: ")
 
       # TODO somehow lock the window list if possible until input is complete
-        # otherwise the selected windows could change, and they shouldn't at this point
+        # otherwise selected windows could change
+          # and they shouldn't at this point
 
       self._single_footer.footer = self._save_prompt
 
@@ -348,29 +367,50 @@ class WindowListBox(ListBox):
 
       self.main_loop.widget = self._single_footer
 
+      return
+
+    if key == 'c': # TODO add a key to just discard all WITHOUT saving
+
+      status = save_and_close(windows = self._all_windows)
+
+      self._set_status(status=status)
+
+      self.body.update_window_list()
+
+      self.focus_position = 0 # trigger update tab list
+
+  @property
+  def _selected_window_ids(self):
+
+    selected_window_ids = []
+
+    for item in self.body:
+      checkbox = item.base_widget
+      if checkbox.state == True:
+        selected_window_ids.append(item.id)
+
+    if len(selected_window_ids) == 0:
+      selected_window_ids.append(self.body[self.focus_position].id)
+
+    return selected_window_ids
+
   @property
   def _selected_windows(self):
 
-      selected_windows = []
+    # FIXME handle window(s) already closed
 
-      for item in self.body:
-        checkbox = item.base_widget
-        if checkbox.state == True:
-          selected_windows.append(item)
-
-      if len(selected_windows) == 0:
-        selected_windows.append(self.body[self.focus_position])
-
-      return selected_windows
+    return [{"title": None, # TODO
+             "tabs": self.body.windows[window_id]}
+             for window_id in self._selected_window_ids]
 
   @property
-  def _selected_windows_with_tabs(self):
+  def _all_windows(self):
 
     # FIXME handle window(s) already closed
 
     return [{"title": None, # TODO
              "tabs": self.body.windows[item.id]}
-             for item in self._selected_windows]
+             for item in self.body]
 
   def _write_windows(self, save_prompt):
 
@@ -381,7 +421,7 @@ class WindowListBox(ListBox):
 
     save_prompt.set_caption('')
 
-    status = save_and_close(windows = self._selected_windows_with_tabs,
+    status = save_and_close(windows = self._selected_windows,
                             name    = name)
 
     self._update_and_set_status(status=status)
@@ -395,9 +435,11 @@ class WindowListBox(ListBox):
     self.main_loop.widget = self._single_footer
 
   def _update_and_set_status(self, status):
+    """sets status, removes selected windows from list"""
 
-    # with open("/tmp/debug", 'a') as debug:
-      # debug.write("_update_and_set_status()\n")
+    # TODO method should really be renamed, it's confused me numerous times now
+      # only removes windows closed, doesn't add added ones (e.g. about:blank)
+      # and perhaps setting status should simply always be done separately
 
     self._set_status(status)
 
@@ -406,13 +448,15 @@ class WindowListBox(ListBox):
       focus_position = self.focus_position
 
       # with open("/tmp/debug", 'a') as debug:
-        # debug.write(f"current focus: {self.body[focus_position].id} at index {focus_position}\n")
+        # debug.write(f"current focus: {self.body[focus_position].id} "
+                    # f"at index {focus_position}\n")
 
       window_count = len(self.body)
 
       index = 0
 
-      selected_window_ids = [window.id for window in self._selected_windows]
+      selected_window_ids = [window_id for window_id
+                             in self._selected_window_ids]
 
       while index < window_count:
 
@@ -435,8 +479,8 @@ class WindowListBox(ListBox):
           index += 1
 
       # with open("/tmp/debug", 'a') as debug:
-        # debug.write(f"new focus: {self.body[focus_position].id} at index {self.focus_position}\n")
-        # debug.write("\n")
+        # debug.write(f"new focus: {self.body[focus_position].id} "
+                    # f"at index {self.focus_position}\n")
 
       self._set_position(focus_position)
 

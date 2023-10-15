@@ -30,7 +30,7 @@ class Tab(TypedDict):
 def get_windows() -> dict[str, list[Tab]]:
 
   set_event_loop(new_event_loop())
-  tabs = api.list_tabs([])
+  tabs = api.list_tabs(args=[])
   get_event_loop().close()
 
   windows: dict[str, list[Tab]] = {}
@@ -67,12 +67,17 @@ class Window(TypedDict):
 
 def close(windows: List[Window]) -> str | HTTPError:
 
+  tab_list = [tab["id"]
+                    for window in windows
+                    for tab in window["tabs"]]
+
   set_event_loop(new_event_loop())
 
+  if len(tab_list) == len(api.list_tabs(args=[])):
+    api.open_urls(urls=["about:blank"], prefix="a.")
+
   try:
-    api.close_tabs([tab["id"]
-                    for window in windows
-                    for tab in window["tabs"]])
+    api.close_tabs(tab_list)
   except HTTPError as http_error:
     return http_error
 
@@ -95,11 +100,12 @@ def save_and_close(windows: List[Window], name=None) -> str | HTTPError:
         or isdir(join(folder, name))):
     subfolder = join(folder, name)
     name = None
+  # TODO why the elIF clause above if no else clause?
+    # i guess then subfolder stays folder and name does NOT become None
+    # but the logic of what is going on here is not very clear... do better.
 
   if not isdir(subfolder):
     mkdir(subfolder)
-
-  folder_contents = listdir(subfolder)
 
   file_indices = [int(filename)
                   for filename in listdir(subfolder)
@@ -113,13 +119,13 @@ def save_and_close(windows: List[Window], name=None) -> str | HTTPError:
 
   set_event_loop(new_event_loop())
 
-  for window in windows:
+  window_count = len(windows)
+
+  for window_number, window in enumerate(windows):
 
     contents = "\n".join([f"{tab['title']}\t{tab['url']}"
                           for tab in window["tabs"]
                           if tab['url'] not in ignored_urls])
-
-    appended = False
 
     if contents:
 
@@ -135,6 +141,8 @@ def save_and_close(windows: List[Window], name=None) -> str | HTTPError:
           file_path = join(subfolder, f"{index:04}")
           index += 1
 
+      appended = False
+
       if isfile(file_path):
         appended = True
         contents = "\n" + contents
@@ -146,7 +154,15 @@ def save_and_close(windows: List[Window], name=None) -> str | HTTPError:
 
       with open("/tmp/debug", 'w') as debugging_log:
         # TODO remove this block after hopefully figuring out the error below
-        debugging_log.write(str(window["tabs"]))
+        debugging_log.write(f"{window_number}\n")
+        debugging_log.write(f"{window_count - 1}\n")
+
+    if (    window_number == window_count - 1
+        and len(api.list_tabs(args=[])) == len(window["tabs"])):
+
+          api.open_urls(urls=["about:blank"], prefix="a.")
+
+          # TODO consider multiple browsers, different prefixes
 
     try:
       # FIXME urllib.error.URLError:
@@ -158,12 +174,18 @@ def save_and_close(windows: List[Window], name=None) -> str | HTTPError:
   get_event_loop().close()
 
   if len(windows) == 1:
-    return (f"window with {len(windows[0]['tabs'])} tab"
-            + ("s " if len(windows[0]['tabs']) > 1 else ' ')
-            + ("appended to " if appended else "saved as ")
-            + relpath(file_path, folder))
 
-  else:
-    return (f"{len(windows)} windows "
-            + f"and {sum([len(window['tabs']) for window in windows])} tabs "
-            + "saved and closed")
+    if contents:
+      return (f"window with {len(windows[0]['tabs'])} tab"
+              + ("s " if len(windows[0]['tabs']) > 1 else ' ')
+              + ("appended to " if appended else "saved as ")
+              + relpath(file_path, folder))
+
+    else:
+      return (f"window with {len(windows[0]['tabs'])} tab"
+              + ("s " if len(windows[0]['tabs']) > 1 else ' ')
+              + "discarded")
+
+  return (f"{len(windows)} windows "
+          + f"and {sum([len(window['tabs']) for window in windows])} tabs "
+          + "saved and closed")
