@@ -11,7 +11,11 @@ from brotab.main import create_clients
 from urllib.error import HTTPError
 
 
-api = MultipleMediatorsAPI(create_clients()) # TODO should i use single mediator API instead?
+ignored_urls = ["about:blank",
+                "https://www.facebook.com/",
+                "https://www.linkedin.com/feed/"]
+
+api = MultipleMediatorsAPI(create_clients())
 
 folder = join(expanduser('~'), "urls-tab_wrangler")
 
@@ -35,16 +39,25 @@ def get_windows() -> dict[str, list[Tab]]:
 
     tab_info = tab.split("\t")
 
-    identifier = tab_info[0]
+    try:
 
-    window_id = identifier.rsplit('.', maxsplit=1)[0]
+      identifier = tab_info[0]
 
-    if window_id not in windows:
-      windows[window_id] = []
+      window_id = identifier.rsplit('.', maxsplit=1)[0]
 
-    windows[window_id].append({"id":    tab_info[0],
-                               "title": tab_info[1].replace("💤 ", ''),
-                               "url":   tab_info[2]})
+      if window_id not in windows:
+        windows[window_id] = []
+
+      windows[window_id].append({"id":    tab_info[0],
+                                 "title": tab_info[1].replace("💤 ", ''),
+                                 "url":   tab_info[2]})
+
+    except IndexError as error:
+
+      if  len(tab_info) != 3:
+        print(f"incorrect tab_info length {len(tab_info)}: {tab_info}")
+
+      raise error
 
   return windows
 
@@ -103,28 +116,41 @@ def save_and_close(windows: List[Window], name=None) -> str | HTTPError:
   for window in windows:
 
     contents = "\n".join([f"{tab['title']}\t{tab['url']}"
-                          for tab in window["tabs"]])
-
-    if window["title"] is not None:
-      file_path = join(subfolder, window["title"])
-
-    else: # window["title"] is None
-      if len(windows) == 1 and name is not None:
-        file_path = join(folder, name)
-      else:
-        file_path = join(subfolder, f"{index:04}")
-        index += 1
+                          for tab in window["tabs"]
+                          if tab['url'] not in ignored_urls])
 
     appended = False
 
-    if isfile(file_path):
-      appended = True
-      contents = "\n" + contents
+    if contents:
 
-    with open(file_path, 'a') as output: # FIXME IsADirectoryError: [Errno 21] Is a directory: '/home/casey/urls-tab_wrangler/linkedin'
-      output.write(contents)
+      # TODO prevent duplicates
+
+      if window["title"] is not None:
+        file_path = join(subfolder, window["title"])
+
+      else: # window["title"] is None
+        if len(windows) == 1 and name is not None:
+          file_path = join(folder, name)
+        else:
+          file_path = join(subfolder, f"{index:04}")
+          index += 1
+
+      if isfile(file_path):
+        appended = True
+        contents = "\n" + contents
+
+      with open(file_path, 'a') as output:
+        # FIXME IsADirectoryError: [Errno 21] Is a directory:
+          # '/home/casey/urls-tab_wrangler/linkedin'
+        output.write(contents)
+
+      with open("/tmp/debug", 'w') as debugging_log:
+        # TODO remove this block after hopefully figuring out the error below
+        debugging_log.write(str(window["tabs"]))
 
     try:
+      # FIXME urllib.error.URLError:
+        # <urlopen error [Errno 99] Cannot assign requested address>
       api.close_tabs([tab["id"] for tab in window["tabs"]])
     except HTTPError as http_error:
       return http_error
