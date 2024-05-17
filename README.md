@@ -54,7 +54,19 @@ to help keep that project alive and up-to-date. Maybe eventually people will
 help contribute to my project to, but at least for now, at first, I can say
 that I unfortunately won't have much time to offer support.
 
-## Keybindings
+## Dependencies
+
+- [brotab](https://github.com/balta2ar/brotab)
+
+- [urwid](https://urwid.org/index.html)
+
+- for shifting focus to a window:
+    - [jq](https://jqlang.github.io/jq/)
+    - [Sway window manager](https://swaywm.org/),
+      or alternatively `wmctrl` if using Ubuntu
+      (in which case uncomment the commented-out line at end of `browser.py`)
+
+## Usage
 
 `c`: Close *all* browser windows, saving their contents to untitled files.
 Careful, as "undo" is not yet implemented!
