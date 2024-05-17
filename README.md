@@ -1,8 +1,10 @@
 # Tab Wrangler
 
-This is a text user interface (TUI) for tabaholics with vim-like keybindings.
+a text user interface (TUI) for tabaholics* with vim-like keybindings
 
-A tabaholic is one known to have hundreds or thousands of browser tabs open.
+\* one known to have hundreds or thousands of browser tabs open
+
+![screenshot](https://github.com/doctorcolossus/tab_wrangler/assets/731937/de09934c-d614-4c20-a997-b112372ff238)
 
 ## Features
 
