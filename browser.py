@@ -13,14 +13,18 @@ from brotab.main import create_clients
 from urllib.error import HTTPError
 
 
+# TODO warn if bt-mediator down!
+
 # TODO document jq dependency... or replicate its used functionality in python
+
+# TODO indicate which windows belong to which browser
+
+# TODO whitelist/blacklist browser(s)
 
 
 ignored_urls = ["about:blank",
                 "https://www.facebook.com/",
                 "https://www.linkedin.com/feed/"]
-
-api = MultipleMediatorsAPI(create_clients())
 
 folder = join(expanduser('~'), "urls-tab_wrangler")
 
@@ -34,8 +38,12 @@ class Tab(TypedDict):
 
 def get_windows() -> Dict[str, List[Tab]]:
 
+  api = MultipleMediatorsAPI(create_clients())
+
   set_event_loop(new_event_loop())
+
   tabs = api.list_tabs(args=[]) # FIXME catch TimeoutError
+
   get_event_loop().close()
 
   windows: dict[str, list[Tab]] = {}
@@ -56,6 +64,12 @@ def get_windows() -> Dict[str, List[Tab]]:
       windows[window_id].append({"id":    tab_info[0],
                                  "title": tab_info[1].replace("💤 ", ''),
                                  "url":   tab_info[2]})
+
+      # FIXME crash on browser closed or bt-mediator down
+        # File "/home/casey/tab_wrangler/browser.py", line 57, in get_windows
+          # "title": tab_info[1].replace("💤 ", ''),
+                   # ~~~~~~~~^^^
+      # IndexError: list index out of range
 
       # hmm, ran into a rare case where a tab lacked a url
         # print(tab_info)
@@ -96,6 +110,8 @@ def close(windows: List[Window]) -> Union[str, HTTPError]:
   tab_list = [tab["id"]
                     for window in windows
                     for tab in window["tabs"]]
+
+  api = MultipleMediatorsAPI(create_clients())
 
   set_event_loop(new_event_loop())
 
@@ -144,6 +160,8 @@ def save_and_close(windows: List[Window],
 
   else:
     index = 0
+
+  api = MultipleMediatorsAPI(create_clients())
 
   set_event_loop(new_event_loop())
 
@@ -222,6 +240,8 @@ def focus_window(window_id: str) -> None:
 
   target_browser, target_window_id = window_id.split('.')
 
+  api = MultipleMediatorsAPI(create_clients())
+
   set_event_loop(new_event_loop())
 
   for browser in api.get_active_tabs(args=[]):
@@ -267,6 +287,8 @@ def focus_window(window_id: str) -> None:
               con_id = con_id.split("\n")[0] # FIXME temporary workaround cheat
 
             # TODO account for different browsers
+
+            # TODO move sway stuff into its own module
 
             # TODO how to reliably check if sway vs. x11, or neither?
             run(["swaymsg", f"[con_id={con_id}]", "focus"])

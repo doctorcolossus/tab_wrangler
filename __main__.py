@@ -78,6 +78,8 @@ class WindowListWalker(SimpleFocusListWalker):
 
   def update_window_list(self):
 
+    # FIXME if the browser is closed and all windows thus get deselected, tab list must be cleared
+
     # TODO read enough closed windows to fill list
       # _, terminal_height = Screen().get_cols_rows()
 
@@ -144,7 +146,11 @@ class WindowListWalker(SimpleFocusListWalker):
 
   def _update_tab_list(self):
 
-    if len(self):
+    if self.focus is None:
+
+      self.tab_list_walker.clear()
+
+    else:
 
       focused_item = self.get_focus()[0]
     
@@ -171,20 +177,16 @@ class WindowListWalker(SimpleFocusListWalker):
 
   def _remember_relative_position(self):
 
-   # FIXME ensure at least one window before trying to access self.focus_position
-    self._ids_preceding = self.window_ids[:self.focus]
-    # FIXME on closed browser or brotab browser extension not installed:
-      # TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'
-      # seems to get triggered for example on focus event now
-        # WindowListBox.body.update_window_list()
-          # → WindowListWalker._modified()
-          # → WindowListWalker._remember_relative_position()
-      # even happens after 'c' to clear out all tabs
-        # but actually the time i experienced it i did manually load a new tab concurrently without waiting for the program to open one last one at the end...
-          # not sure that would cause any difference, but just to note it
-    self._ids_following = self.window_ids[(self.focus + 1):]
+    if self.focus is not None:
+
+      self._ids_preceding = self.window_ids[:self.focus]
+
+      self._ids_following = self.window_ids[(self.focus + 1):]
 
   def decrement_position(self):
+
+    if self.focus is None:
+      return
 
     index = len(self) - 1
 
@@ -200,6 +202,9 @@ class WindowListWalker(SimpleFocusListWalker):
     self.set_focus(index)
 
   def increment_position(self):
+
+    if self.focus is None:
+      return
 
     index = None
 
@@ -273,7 +278,8 @@ class WindowListBox(ListBox):
     self._single_footer = Frame(body   = columns,
                                 footer = self._save_prompt)
 
-    self.focus_position = 0 # FIXME ensure at least one window
+    if self.focus is not None:
+      self.focus_position = 0
 
     self.main_loop = MainLoop(widget  = self._split_footers,
                               palette = palette)
@@ -286,7 +292,9 @@ class WindowListBox(ListBox):
   def keypress(self, size, key):
 
     if key == "meta [":
+
       self._control_sequence = True
+
       return
 
     if self._control_sequence is True:
@@ -349,6 +357,54 @@ class WindowListBox(ListBox):
     self.body.update_window_list()
 
     # TODO allow click to select but not check
+
+    if key == '/':
+
+      if self.focus is not None:
+        self._focus_position_before_search = self.focus_position
+
+      self._search_forwards = True
+
+      self._set_status(status="/█")
+
+      self._mode = "search"
+
+      return
+
+    if key == '?':
+
+      if self.focus is not None:
+        self._focus_position_before_search = self.focus_position
+
+      self._search_forwards = False
+
+      self._set_status(status="?█")
+
+      self._mode = "search"
+
+      return
+
+    if key == 'n':
+
+      if self.focus is not None:
+        self._focus_position_before_search = self.focus_position
+
+      self._search()
+
+      return
+
+    if key == 'N':
+
+      if self.focus is not None:
+        self._focus_position_before_search = self.focus_position
+
+      self._search(reverse=True)
+
+      return
+
+    # Any & all keybindings depending on nonempty list should go below this.
+    if len(self.body) == 0: 
+      return
 
     if key == "enter":
       focus_window(self.body[self.focus_position].id)
@@ -438,46 +494,14 @@ class WindowListBox(ListBox):
     if key == 'c': # TODO add a key to just discard all WITHOUT saving
 
       status = save_and_close(windows = self._all_windows)
+      # TODO update list dynamically, as each window is closed
+        # i guess that'd require passing each window individually - not a list
 
       self._set_status(status=status)
 
       self.body.update_window_list()
 
       self.focus_position = 0 # trigger update tab list
-
-    if key == '/':
-
-      self._focus_position_before_search = self.focus_position
-
-      self._search_forwards = True
-
-      self._set_status(status="/█")
-
-      self._mode = "search"
-
-      return
-
-    if key == '?':
-
-      self._focus_position_before_search = self.focus_position
-
-      self._search_forwards = False
-
-      self._set_status(status="?█")
-
-      self._mode = "search"
-
-      return
-
-    if key == 'n':
-      self._focus_position_before_search = self.focus_position
-      self._search()
-      return
-
-    if key == 'N':
-      self._focus_position_before_search = self.focus_position
-      self._search(reverse=True)
-      return
 
     # TODO keys to switch between window & tabs list
       # key to toggle (tab?)
@@ -493,8 +517,11 @@ class WindowListBox(ListBox):
     if reverse is True:
       search_forwards = not search_forwards
 
-    window_list = [*self.body[self._focus_position_before_search + 1: ],
-                   *self.body[:self._focus_position_before_search]]
+    window_list = []
+
+    if len(self.body) > 0:
+      window_list = [*self.body[self._focus_position_before_search + 1: ],
+                     *self.body[:self._focus_position_before_search]]
 
     if search_forwards is False:
       window_list = reversed(window_list)
