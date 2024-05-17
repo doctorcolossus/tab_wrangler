@@ -1,14 +1,19 @@
 #!/bin/env python
 
 from asyncio import get_event_loop, new_event_loop, set_event_loop
+from json import loads
 from os import listdir, mkdir
 from os.path import expanduser, isdir, isfile, join, relpath
 from re import match
-from typing import Dict, List, TypedDict
+from subprocess import getoutput, run
+from typing import Dict, List, TypedDict, Union
 
 from brotab.api import MultipleMediatorsAPI
 from brotab.main import create_clients
 from urllib.error import HTTPError
+
+
+# TODO document jq dependency... or replicate its used functionality in python
 
 
 ignored_urls = ["about:blank",
@@ -27,10 +32,10 @@ class Tab(TypedDict):
   title: str
   url:   str
 
-def get_windows() -> dict[str, list[Tab]]:
+def get_windows() -> Dict[str, List[Tab]]:
 
   set_event_loop(new_event_loop())
-  tabs = api.list_tabs(args=[])
+  tabs = api.list_tabs(args=[]) # FIXME catch TimeoutError
   get_event_loop().close()
 
   windows: dict[str, list[Tab]] = {}
@@ -52,12 +57,33 @@ def get_windows() -> dict[str, list[Tab]]:
                                  "title": tab_info[1].replace("💤 ", ''),
                                  "url":   tab_info[2]})
 
+      # hmm, ran into a rare case where a tab lacked a url
+        # print(tab_info)
+        # ['a.85.10', 'It is']
+      # this page caused & reproducibly causes it:
+        # https://www.really-learn-english.com/it-is-vs-there-is.html
+      # a normal one looks like:
+        # ['a.85.17', 'There is...', 'https://learnenglishteens...']
+      # FIXME handle this!
+
     except IndexError as error:
 
       if  len(tab_info) != 3:
-        print(f"incorrect tab_info length {len(tab_info)}: {tab_info}")
 
-      raise error
+        with open("/tmp/debug", 'w') as debugging_log:
+          debugging_log.write(f"incorrect tab_info length {len(tab_info)}: "
+                              f"{tab_info}\n")
+        # after browser crash:
+          # incorrect tab_info length 1: ['b.<ERROR>']
+
+      raise error # TODO handle, don't crash
+        # display temporary error message
+        # try to reestablish connection on regain focus
+
+      # FIXME
+        # File "/home/casey/tab_wrangler/browser.py", line 57, in get_windows
+          # "title": tab_info[1].replace("💤 ", ''),
+          # IndexError: list index out of range
 
   return windows
 
@@ -65,7 +91,7 @@ class Window(TypedDict):
   title: str
   tabs:  List[Tab]
 
-def close(windows: List[Window]) -> str | HTTPError:
+def close(windows: List[Window]) -> Union[str, HTTPError]:
 
   tab_list = [tab["id"]
                     for window in windows
@@ -88,7 +114,9 @@ def close(windows: List[Window]) -> str | HTTPError:
           + f"and {sum([len(window['tabs']) for window in windows])} tab"
           + ("s " if len(windows[0]['tabs']) > 1 else ' '))
 
-def save_and_close(windows: List[Window], name=None) -> str | HTTPError:
+def save_and_close(windows: List[Window],
+                   name:    str = None
+                   ) -> Union[str, HTTPError]:
 
   subfolder = folder
 
@@ -189,3 +217,59 @@ def save_and_close(windows: List[Window], name=None) -> str | HTTPError:
   return (f"{len(windows)} windows "
           + f"and {sum([len(window['tabs']) for window in windows])} tabs "
           + "saved and closed")
+
+def focus_window(window_id: str) -> None:
+
+  target_browser, target_window_id = window_id.split('.')
+
+  set_event_loop(new_event_loop())
+
+  for browser in api.get_active_tabs(args=[]):
+    # FIXME urllib.error.URLError: <urlopen error [Errno 99] Cannot assign requested address>
+      # just retry once?
+
+    for id in browser:
+
+      browser, window_id, tab_id = id.split('.')
+
+      if browser != target_browser:
+        break
+
+      if window_id == target_window_id:
+
+        for tab in api.list_tabs(args=[]):
+
+          tab_id, tab_title, _ = tab.split("\t")
+
+          if tab_id == id:
+
+            # FIXME doesn't work if window title is non-unique
+            # FIXME doesn't work if window title contains an apostrophe
+
+            if "'" in tab_title:
+              tab_title =  tab_title[:tab_title.index("'")]
+
+            if '"' in tab_title:
+              tab_title =  tab_title.replace('"', '\\"')
+
+            # TODO yeah, i should really do away with the jq dependency and be able to handle apostrophes...
+
+            # TODO at least add back in: select(.type?=="con") 
+
+            con_id = getoutput("swaymsg -t get_tree "
+                               "| jq '.. | objects | .nodes?[]? | "
+                               "select(.type? == \"con\") | "
+                               "select(.name? != null) | "
+                               f"select(.name? | startswith(\"{tab_title}\")) "
+                               "| .id?'")
+
+            if "\n" in con_id:
+              con_id = con_id.split("\n")[0] # FIXME temporary workaround cheat
+
+            # TODO account for different browsers
+
+            # TODO how to reliably check if sway vs. x11, or neither?
+            run(["swaymsg", f"[con_id={con_id}]", "focus"])
+            # run(["wmctrl", "a", f"{tab_title}"]) # iirc... TODO double-check
+
+  get_event_loop().close()

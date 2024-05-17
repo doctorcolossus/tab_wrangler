@@ -1,5 +1,7 @@
 #!/bin/env python
 
+from atexit import register
+
 from urwid import (AttrMap,
                    Button,
                    CheckBox,
@@ -24,7 +26,9 @@ from urllib.error import HTTPError
 from urwid.raw_display import Screen
 from urwid.signals import MetaSignals
 
-from tab_wrangler.browser import get_windows, close, save_and_close
+from tab_wrangler.browser \
+  import get_windows, close, save_and_close, focus_window
+  # TODO focus_window should be imported from WM/DE module - not browser
 
 
 class EditBox(Edit):
@@ -58,13 +62,24 @@ class WindowListWalker(SimpleFocusListWalker):
 
     self.update_window_list()
 
-    connect_signal(obj=self, name="modified", callback=self._update_tab_list)
+    self._remember_relative_position()
+
+    connect_signal(obj      = self,
+                   name     = "modified",
+                   callback = self._update_tab_list)
+
+    connect_signal(obj      = self,
+                   name     = "modified",
+                   callback = self._remember_relative_position)
 
   @property
   def window_ids(self):
     return [window.id for window in self]
 
   def update_window_list(self):
+
+    # TODO read enough closed windows to fill list
+      # _, terminal_height = Screen().get_cols_rows()
 
     self.windows = get_windows()
 
@@ -154,6 +169,59 @@ class WindowListWalker(SimpleFocusListWalker):
             self.tab_count.set_text(
               f" {tab_count} tab{'s' if tab_count > 1 else ''}")
 
+  def _remember_relative_position(self):
+
+   # FIXME ensure at least one window before trying to access self.focus_position
+    self._ids_preceding = self.window_ids[:self.focus]
+    # FIXME on closed browser or brotab browser extension not installed:
+      # TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'
+      # seems to get triggered for example on focus event now
+        # WindowListBox.body.update_window_list()
+          # → WindowListWalker._modified()
+          # → WindowListWalker._remember_relative_position()
+      # even happens after 'c' to clear out all tabs
+        # but actually the time i experienced it i did manually load a new tab concurrently without waiting for the program to open one last one at the end...
+          # not sure that would cause any difference, but just to note it
+    self._ids_following = self.window_ids[(self.focus + 1):]
+
+  def decrement_position(self):
+
+    index = len(self) - 1
+
+    for window_id in reversed(self._ids_preceding):
+
+      try:
+        index = self.window_ids.index(window_id)
+      except ValueError:
+        continue
+
+      break
+
+    self.set_focus(index)
+
+  def increment_position(self):
+
+    index = None
+
+    for window_id in self._ids_following:
+
+      try:
+        index = self.window_ids.index(window_id)
+      except ValueError:
+        continue
+
+      break
+
+    if index is None:
+
+      index = self.focus + 1
+
+      if len(self) <= index:
+        index = 0
+
+    self.set_focus(index)
+
+
 class WindowListBox(ListBox):
 
   def __init__(self, *args, **kwargs):
@@ -184,18 +252,28 @@ class WindowListBox(ListBox):
 
     columns = Columns(widget_list=[(32, left_column), right_column])
 
+    self._mode = "normal"
+
+    self._control_sequence = False
+
+    self._focus_position_before_search = None
+
+    self._search_query = None
+
+    self._search_forwards = True
+
     self._save_prompt = EditBox()
 
     self._status_bar = Text(markup='')
 
-    connect_signal(obj=self._save_prompt, name="done", callback=self._write_windows)
+    connect_signal(obj      = self._save_prompt,
+                   name     = "done",
+                   callback = self._write_windows)
 
     self._single_footer = Frame(body   = columns,
                                 footer = self._save_prompt)
 
     self.focus_position = 0 # FIXME ensure at least one window
-
-    self._remember_relative_position()
 
     self.main_loop = MainLoop(widget  = self._split_footers,
                               palette = palette)
@@ -205,98 +283,63 @@ class WindowListBox(ListBox):
       # from os import remove
       # remove("/tmp/debug")
 
-  def _remember_relative_position(self):
-
-   # FIXME ensure at least one window before trying to access self.focus_position
-    self._ids_preceding = self.body.window_ids[:self.focus_position]
-    self._ids_following = self.body.window_ids[(self.focus_position + 1):]
-
-    # with open("/tmp/debug", 'a') as debug:
-      # debug.write(f"self.focus_position: {self.focus_position}\n")
-      # debug.write(f"self.body.window_ids: {self.body.window_ids}\n")
-      # debug.write(f"ids preceding: {self._ids_preceding}\n")
-      # debug.write(f"ids following: {self._ids_following}\n")
-      # debug.write("\n")
-
-  def _set_position(self, index):
-    self.focus_position = index
-    self._remember_relative_position()
-
-  def _decrement_position(self):
-
-    index = len(self.body) - 1
-
-    # with open("/tmp/debug", 'a') as debug:
-      # debug.write("decrementing position...\n")
-      # debug.write(f"current focus: {self.body[self.focus_position].id} "
-                  # f"at index {self.focus_position}\n")
-      # debug.write(f"ids preceding: {self._ids_preceding}\n")
-      # debug.write(f"ids following: {self._ids_following}\n")
-
-    for window_id in reversed(self._ids_preceding):
-
-      try:
-        index = self.body.window_ids.index(window_id)
-        # with open("/tmp/debug", 'a') as debug:
-          # debug.write(f"previous window: {window_id}, at index {index}\n")
-      except ValueError:
-        continue
-
-      break
-
-    self._set_position(index)
-
-    # with open("/tmp/debug", 'a') as debug:
-      # debug.write("\n")
-
-    # if  self.focus_position > 0:
-      # self.focus_position -= 1
-    # else:
-      # self.focus_position = len(self.body) - 1
-
-  def _increment_position(self):
-
-    index = None
-
-    # with open("/tmp/debug", 'a') as debug:
-      # debug.write("incrementing position...\n")
-      # debug.write(f"current focus: {self.body[self.focus_position].id} "
-                  # f"at index {self.focus_position}\n")
-      # debug.write(f"ids preceding: {self._ids_preceding}\n")
-      # debug.write(f"ids following: {self._ids_following}\n")
-
-    for window_id in self._ids_following:
-
-      try:
-        index = self.body.window_ids.index(window_id)
-        # with open("/tmp/debug", 'a') as debug:
-          # debug.write(f"next window: {window_id}, at index {index}\n")
-      except ValueError:
-        continue
-
-      break
-
-    if index is None:
-
-      index = self.focus_position + 1
-
-      if len(self.body) <= index:
-        index = 0
-
-      # with open("/tmp/debug", 'a') as debug:
-        # debug.write(f"no next window found - setting index to {index}\n")
-
-    self._set_position(index)
-
-    # with open("/tmp/debug", 'a') as debug:
-      # debug.write("\n")
-
-    # if self.focus_position < (len(self.body) - 1):
-      # self.focus_position += 1
-    # else:
-      # self.focus_position = 0
-
   def keypress(self, size, key):
+
+    if key == "meta [":
+      self._control_sequence = True
+      return
+
+    if self._control_sequence is True:
+
+      self._control_sequence = False
+
+      if key == 'I': # focus gained
+        self.body.update_window_list()
+
+      return
+
+    if self._mode == "search":
+      # TODO remember starting selection, to revert in case search canceled
+      # TODO actually implement search
+        # start from the currently-selected window, wrap around... then search saved?
+          # or simply start from the "first" window and work down?
+        # case insensitive or nah?
+      # TODO handle 'enter'
+      # TODO filter out any unexpected non-alphanumeric keys... while still allowing weird languages
+      # TODO save last query for n/N
+      # TODO implement search direction with ?-/
+      # TODO handle cursor with left/write arrow keys
+      # TODO handle delete
+      # TODO handle ctrl+w
+
+      if key == "enter":
+        # TODO actually to be like vim, for enter i should exit search mode but leave search query displayed without cursor until next keystroke
+          # or should enter immediately activate and focus the tab?
+        self._mode = "normal"
+        self.main_loop.widget = self._split_footers # TODO make a method which does this, for readability
+        return
+
+      if (   (key == "esc")
+          or (key == "backspace" and len(self._status_bar.text) == 2)):
+        # TODO restore previous selection on canceling search
+        self.focus_position = self._focus_position_before_search
+        self._mode = "normal"
+        self.main_loop.widget = self._split_footers # TODO make a method which does this, for readability
+        return
+
+      if key == "backspace":
+        if len(self._status_bar.text) > 2:
+          self._status_bar.set_text(self._status_bar.text[:-2] + '█')
+      elif key == "ctrl u":
+        self._status_bar.set_text(self._status_bar.text[0] + '█')
+      else:
+        self._status_bar.set_text(self._status_bar.text[:-1] + key + '█')
+
+      self._search_query = self._status_bar.text[1:-1].lower()
+
+      self._search()
+
+      return
 
     if key == 'q':
       raise ExitMainLoop()
@@ -305,26 +348,32 @@ class WindowListBox(ListBox):
 
     self.body.update_window_list()
 
+    # TODO allow click to select but not check
+
+    if key == "enter":
+      focus_window(self.body[self.focus_position].id)
+      return
+
     if key == ' ':
       checkbox = self.body[self.focus_position].base_widget
       checkbox.state = not checkbox.state
       return
 
     if key in ('k', 'up'):
-      self._decrement_position()
+      self.body.decrement_position()
       return
 
     if key in (' ', 'j', "down"):
       # TODO make ' ' continue in the last-used direction (up or down)
-      self._increment_position()
+      self.body.increment_position()
       return
 
     if key == 'g':
-      self._set_position(0)
+      self.focus_position = 0
       return
 
     if key == 'G':
-      self._set_position(len(self.body) - 1)
+      self.focus_position = len(self.body) - 1
       return
 
     if key == 'd':
@@ -348,6 +397,23 @@ class WindowListBox(ListBox):
       return
 
     if key == 'w':
+
+      # TODO check selected window if no window checked
+        # i think this is inferred somewhere in the browser code
+          # but when user is prompted for a filename and list loses focus...
+            # it's not visible which window is being saved
+          # so simplify that code in the browser
+            # and make it explicit here
+      # TODO alternatively...
+        # consider getting rid of the whole "save_prompt" thing
+          # status bar can be used on its own...
+            # i just need to handle backspace and other specific bindings
+            # hmm, not so easy to implement cursor... and mouse bindings...
+              # but with save prompt selected, listbox selection isn't visible
+
+      # TODO handle blank input
+
+      # TODO allow escape to cancel
 
       if len(self._selected_window_ids) == 1:
         # TODO check if the window has a title
@@ -378,6 +444,71 @@ class WindowListBox(ListBox):
       self.body.update_window_list()
 
       self.focus_position = 0 # trigger update tab list
+
+    if key == '/':
+
+      self._focus_position_before_search = self.focus_position
+
+      self._search_forwards = True
+
+      self._set_status(status="/█")
+
+      self._mode = "search"
+
+      return
+
+    if key == '?':
+
+      self._focus_position_before_search = self.focus_position
+
+      self._search_forwards = False
+
+      self._set_status(status="?█")
+
+      self._mode = "search"
+
+      return
+
+    if key == 'n':
+      self._focus_position_before_search = self.focus_position
+      self._search()
+      return
+
+    if key == 'N':
+      self._focus_position_before_search = self.focus_position
+      self._search(reverse=True)
+      return
+
+    # TODO keys to switch between window & tabs list
+      # key to toggle (tab?)
+      # key to focus window/tab lists respectively
+        # 'w' is taken... hmm... maybe 'h'/'l' like vim
+
+  def _search(self, reverse=False):
+
+    # TODO save search query history
+
+    search_forwards = self._search_forwards
+
+    if reverse is True:
+      search_forwards = not search_forwards
+
+    window_list = [*self.body[self._focus_position_before_search + 1: ],
+                   *self.body[:self._focus_position_before_search]]
+
+    if search_forwards is False:
+      window_list = reversed(window_list)
+
+    for window in window_list:
+      tab_list = self.body.windows[window.id]
+      if search_forwards is False:
+        tab_list = reversed(tab_list)
+      for tab in tab_list:
+        if self._search_query in tab["title"].lower():
+          self.focus_position = self.body.index(window)
+          # TODO select the particular tab
+            # TODO make tabs even selectable/browsable at all
+          return
 
   @property
   def _selected_window_ids(self):
@@ -482,7 +613,7 @@ class WindowListBox(ListBox):
         # debug.write(f"new focus: {self.body[focus_position].id} "
                     # f"at index {self.focus_position}\n")
 
-      self._set_position(focus_position)
+      self.focus_position = self.focus_position
 
       self._single_footer.focus_position = "body"
 
@@ -495,5 +626,9 @@ palette = [("window browser", "default",    "default"),
 
 terminal_title = "tabwrangler"
 print(f'\33]0;{terminal_title}\a', end='', flush=True)
+
+print('\x1b[?1004h', end='') # enable focus events
+register(lambda: print('\x1b[?1004l', end='')) # disable focus events atexit
+# https://unix.stackexchange.com/a/480138/85161
 
 WindowListBox(body=WindowListWalker()).main_loop.run()
