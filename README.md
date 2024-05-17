@@ -68,6 +68,15 @@ that I unfortunately won't have much time to offer support.
 
 ## Usage
 
+Currently I just keep this in `~/tab_wrangler`
+and run it from `~` as  `python -m tab_wrangler`.
+
+If there's interest, I could work on making this into a proper Python package
+and/or providing packages for Arch Linux or Debian/Ubuntu.
+But for now I am lazy. Pull requests welcome!
+
+### Keybindings
+
 `c`: Close *all* browser windows, saving their contents to untitled files.
 Careful, as "undo" is not yet implemented!
 
