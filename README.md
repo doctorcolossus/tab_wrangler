@@ -18,7 +18,7 @@ This program currently helps mainly:
 
 Saved windows are currently saved to `~/urls-tab_wrangler`
 as lists of tab-separated values with two columns: title and URL.
-Untitled ones are numbered and thrown into the `untitled` subfolder.
+Untitled ones are numbered and chucked into the `untitled` subfolder.
 
 ## Future
 
@@ -69,7 +69,9 @@ that I unfortunately won't have much time to offer support.
 ## Usage
 
 Currently I just keep this in `~/tab_wrangler`
-and run it from `~` as  `python -m tab_wrangler`.
+and run it from `~` with:
+
+    python -m tab_wrangler
 
 If there's interest, I could work on making this into a proper Python package
 and/or providing packages for Arch Linux or Debian/Ubuntu.
