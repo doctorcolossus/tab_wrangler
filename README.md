@@ -52,8 +52,8 @@ the amazing [brotab](https://github.com/balta2ar/brotab), alive,
 by contributing to its ecosystem. I figure the more useful software there is
 out there which depends on it, the greater the incentive will be for everyone
 to help keep that project alive and up-to-date. Maybe eventually people will
-help contribute to my project to, but at least for now, at first, I can say
-that I unfortunately won't have much time to offer support.
+help contribute to my project too, but at least for now, at first, I can say
+that I unfortunately won't have much time to offer support for it.
 
 ## Dependencies
 
