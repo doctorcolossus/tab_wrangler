@@ -10,7 +10,7 @@ a text user interface (TUI) for tabaholics* with vim-like keybindings
 
 This program currently helps mainly:
 
-- to give a readable overview of all openwindows and tabs,
+- to give a readable overview of all open windows and tabs,
 
 - to find and get back to things you know you have open in some window, and
 
