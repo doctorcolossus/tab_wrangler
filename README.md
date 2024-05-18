@@ -1,8 +1,7 @@
 # Tab Wrangler
 
-a text user interface (TUI) for tabaholics* with vim-like keybindings
-
-\* one known to have hundreds or thousands of browser tabs open
+text user interface for browser tabaholics & tab-hoarders,
+with vim-like keybindings
 
 ![screenshot](https://github.com/doctorcolossus/tab_wrangler/assets/731937/de09934c-d614-4c20-a997-b112372ff238)
 
@@ -10,7 +9,7 @@ a text user interface (TUI) for tabaholics* with vim-like keybindings
 
 This program currently helps mainly:
 
-- to give a readable overview of all open windows and tabs,
+- to give a readable overview of all open browser windows and tabs,
 
 - to find and get back to things you know you have open in some window, and
 
@@ -34,8 +33,9 @@ The next main features I would like to implement are:
 
 ## Support
 
-I wrote this for my own use and use it on a daily basis.
-This means I didn't design it with other people's environments in mind.
+I wrote this for my own use, and not to share or show off.
+I do use it on a daily basis myself, but it's still far from complete.
+I didn't design it with other people's environments in mind.
 I use [Sway window manager](https://swaywm.org/) in Arch Linux.
 The feature to shift focus to an open window depends on Sway's `swaymsg`.
 I have also been able to test this in Ubuntu 22.04 (Jammy Jellyfish),
@@ -43,6 +43,7 @@ and was able to get that same functionality using `wmctrl` -
 see the commented-out line at the end of `browser.py` for how.
 In the future, maybe I'll try to support and detect different environments,
 but for now that's a low priority on the distant horizon.
+I work on this project once in a blue moon, when I find time and motivation.
 
 ## Why I'm sharing
 
