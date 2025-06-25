@@ -3,7 +3,7 @@
 text user interface for browser tabaholics & tab-hoarders,
 with vim-like keybindings
 
-![screenshot](https://github.com/doctorcolossus/tab_wrangler/assets/731937/de09934c-d614-4c20-a997-b112372ff238)
+![screenshot](https://github.com/user-attachments/assets/21a2866c-6ed0-43fb-b8e7-6869febb8f64)
 
 ## Features
 
